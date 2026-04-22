@@ -416,6 +416,8 @@
     const STATES = { IDLE: 'idle', RECORDING: 'recording', ANALYZING: 'analyzing', RESULTS: 'results' };
     let currentAnalysisData = {};
     let lastAnalysisTranscript = '';
+    let liveController = null;
+    let liveDebounceTimer = null;
 
     // ─── STATE MACHINE ────────────────────────────────────────────────────────
     function setState(newState) {
@@ -479,6 +481,11 @@
     document.getElementById('btn-new-recording').addEventListener('click', resetToIdle);
 
     function resetToIdle() {
+      clearTimeout(liveDebounceTimer);
+      liveDebounceTimer = null;
+      liveController?.abort();
+      liveController = null;
+      document.getElementById('sidebar-label').textContent = 'Will analyze:';
       currentAnalysisData = {};
       lastAnalysisTranscript = '';
       document.getElementById('transcript-final').textContent = '';
@@ -533,15 +540,18 @@
 
       recognition.onresult = (event) => {
         let interim = '';
+        let gotFinal = false;
         for (let i = event.resultIndex; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
             finalTranscript += event.results[i][0].transcript + ' ';
+            gotFinal = true;
           } else {
             interim += event.results[i][0].transcript;
           }
         }
         document.getElementById('transcript-final').textContent = finalTranscript;
         document.getElementById('transcript-interim').textContent = interim;
+        if (gotFinal) scheduleLiveAnalysis();
       };
 
       recognition.onerror = (event) => {
@@ -559,6 +569,109 @@
       };
     }
 
+    // ─── LIVE ANALYSIS (during recording) ────────────────────────────────────
+    function scheduleLiveAnalysis() {
+      clearTimeout(liveDebounceTimer);
+      if (finalTranscript.trim().split(/\s+/).length < 8) return; // wait for enough words
+      liveDebounceTimer = setTimeout(runLiveAnalysis, 2500);
+    }
+
+    async function runLiveAnalysis() {
+      const transcript = finalTranscript.trim();
+      if (!transcript) return;
+      const apiKey = localStorage.getItem('sp_apiKey');
+      if (!apiKey) return;
+
+      liveController?.abort();
+      liveController = new AbortController();
+
+      document.getElementById('sidebar-label').textContent = '✦ Analyzing live:';
+      document.querySelectorAll('.chip').forEach(chip => {
+        chip.dataset.chipState = 'pending';
+        chip.querySelector('.chip-preview')?.remove();
+      });
+
+      let response;
+      try {
+        response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          signal: liveController.signal,
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 2048,
+            stream: true,
+            system: buildSystemPrompt(),
+            messages: [{ role: 'user', content: `Analyze this standup transcript:\n\n${transcript}` }]
+          })
+        });
+      } catch (err) {
+        if (err.name !== 'AbortError') console.warn('Live analysis error:', err);
+        return;
+      }
+
+      if (!response.ok) return;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = '';
+      let lineBuffer = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          sseBuffer += decoder.decode(value, { stream: true });
+          const sseLines = sseBuffer.split('\n');
+          sseBuffer = sseLines.pop();
+
+          for (const sseLine of sseLines) {
+            if (!sseLine.startsWith('data: ')) continue;
+            const raw = sseLine.slice(6).trim();
+            if (raw === '[DONE]') continue;
+            let event;
+            try { event = JSON.parse(raw); } catch { continue; }
+
+            if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+              lineBuffer += event.delta.text;
+
+              const catMatch = lineBuffer.match(/"category"\s*:\s*"([^"]+)"/);
+              if (catMatch) updateChip(catMatch[1], 'streaming');
+
+              let nl;
+              while ((nl = lineBuffer.indexOf('\n')) !== -1) {
+                const completeLine = lineBuffer.slice(0, nl).trim();
+                lineBuffer = lineBuffer.slice(nl + 1);
+                if (!completeLine) continue;
+                try {
+                  const parsed = JSON.parse(completeLine);
+                  if (parsed.category) updateChip(parsed.category, 'done', getChipPreview(parsed.category, parsed.data));
+                } catch {}
+              }
+            }
+          }
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') console.warn('Live streaming error:', err);
+        return;
+      }
+
+      if (lineBuffer.trim()) {
+        try {
+          const parsed = JSON.parse(lineBuffer.trim());
+          if (parsed.category) updateChip(parsed.category, 'done', getChipPreview(parsed.category, parsed.data));
+        } catch {}
+      }
+
+      document.getElementById('sidebar-label').textContent = '✓ Live results:';
+    }
+
     function startRecording() {
       if (!recognition) return;
       finalTranscript = '';
@@ -570,6 +683,11 @@
     }
 
     function stopRecording() {
+      clearTimeout(liveDebounceTimer);
+      liveDebounceTimer = null;
+      liveController?.abort();
+      liveController = null;
+
       if (!recognition) return;
       recognition.stop();
       const transcript = finalTranscript.trim();
