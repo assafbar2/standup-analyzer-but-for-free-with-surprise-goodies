@@ -341,6 +341,12 @@
     <!-- LEFT PANEL -->
     <div id="left-panel">
 
+      <!-- ERROR MESSAGE (visible across all states when shown) -->
+      <div id="error-message">
+        <span id="error-text"></span>
+        <button id="btn-retry" style="display:none">Retry</button>
+      </div>
+
       <!-- IDLE STATE -->
       <div class="state-view" id="view-idle">
         <div id="unsupported-banner" style="display:none">
@@ -402,12 +408,6 @@
         <div class="chip fun-chip" data-category="confidence_score" data-chip-state="pending">📊 Confidence Score</div>
       </div>
     </aside>
-
-    <!-- ERROR MESSAGE (visible across all states when shown) -->
-    <div id="error-message">
-      <span id="error-text"></span>
-      <button id="btn-retry" style="display:none">Retry</button>
-    </div>
 
   </main>
 
