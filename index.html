@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Standup Analyzer</title>
+</head>
+<body data-state="idle">
+
+  <!-- SETTINGS PANEL (toggled by .settings-open on body) -->
+  <div id="settings-panel">
+    <div id="settings-content">
+      <h2>Settings</h2>
+      <button id="settings-close">✕</button>
+      <label>
+        API Key
+        <input type="password" id="setting-apikey" placeholder="sk-ant-...">
+      </label>
+      <label>
+        Team Name
+        <input type="text" id="setting-teamname" placeholder="Support Team">
+      </label>
+      <label>
+        Buzzword Watch List (comma-separated)
+        <input type="text" id="setting-buzzwords" placeholder="Lego,synergy,circle back,bandwidth,unblock">
+      </label>
+      <label>
+        <input type="checkbox" id="setting-showfun"> Show Fun Categories
+      </label>
+      <button id="settings-save">Save</button>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <header id="app-header">
+    <span id="header-team-name">Support Team</span>
+    <span id="header-status"></span>
+    <button id="btn-settings">⚙ Settings</button>
+  </header>
+
+  <!-- MAIN SPLIT LAYOUT -->
+  <main id="main-layout">
+
+    <!-- LEFT PANEL -->
+    <div id="left-panel">
+
+      <!-- IDLE STATE -->
+      <div class="state-view" id="view-idle">
+        <div id="unsupported-banner" style="display:none">
+          ⚠ Web Speech API requires Chrome. Please open this page in Chrome.
+        </div>
+        <button id="btn-record">⏺</button>
+        <p id="click-to-record">Click to Record</p>
+        <div id="transcript-placeholder">Transcript will appear here...</div>
+      </div>
+
+      <!-- RECORDING STATE -->
+      <div class="state-view" id="view-recording">
+        <button id="btn-stop">⏹ Stop</button>
+        <p id="recording-label">● Recording</p>
+        <div id="transcript-live">
+          <span id="transcript-final"></span><span id="transcript-interim"></span>
+        </div>
+      </div>
+
+      <!-- ANALYZING STATE -->
+      <div class="state-view" id="view-analyzing">
+        <div id="transcript-frozen"></div>
+      </div>
+
+      <!-- RESULTS STATE -->
+      <div class="state-view" id="view-results">
+        <div id="results-actions">
+          <button id="btn-copy-transcript">📄 Copy Transcript</button>
+          <button id="btn-copy-md">📋 Copy MD</button>
+          <button id="btn-new-recording">🔁 New Recording</button>
+        </div>
+        <div id="tabs">
+          <button class="tab-btn active" data-tab="summary">📋 Summary</button>
+          <button class="tab-btn" data-tab="actions">✅ Action Items</button>
+          <button class="tab-btn" data-tab="fun">🎲 Fun Stats</button>
+        </div>
+        <div id="tab-summary" class="tab-content active"></div>
+        <div id="tab-actions" class="tab-content"></div>
+        <div id="tab-fun" class="tab-content"></div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT SIDEBAR -->
+    <aside id="sidebar">
+      <div id="sidebar-label">Will analyze:</div>
+      <div id="category-chips">
+        <div class="chip" data-category="issues" data-chip-state="pending">🔴 Issues &amp; Severity</div>
+        <div class="chip" data-category="blockers" data-chip-state="pending">🚧 Blockers &amp; Escalations</div>
+        <div class="chip" data-category="action_items" data-chip-state="pending">✅ Action Items</div>
+        <div class="chip" data-category="tickets" data-chip-state="pending">🎫 Tickets Referenced</div>
+        <div class="chip" data-category="follow_ups" data-chip-state="pending">🔍 Follow-ups</div>
+        <div class="chip" data-category="mood" data-chip-state="pending">😄 Team Mood</div>
+        <div class="chip fun-chip" data-category="joke" data-chip-state="pending">😂 Joke Detector</div>
+        <div class="chip fun-chip" data-category="buzzwords" data-chip-state="pending">🎲 Buzzword Bingo</div>
+        <div class="chip fun-chip" data-category="tool_complaints" data-chip-state="pending">🔧 Tool Complaints</div>
+        <div class="chip fun-chip" data-category="boss_complaints" data-chip-state="pending">😤 Boss Complaints</div>
+        <div class="chip fun-chip" data-category="dramatic_line" data-chip-state="pending">🎭 Most Dramatic Line</div>
+        <div class="chip fun-chip" data-category="confidence_score" data-chip-state="pending">📊 Confidence Score</div>
+      </div>
+    </aside>
+
+    <!-- ERROR MESSAGE (visible across all states when shown) -->
+    <div id="error-message">
+      <span id="error-text"></span>
+      <button id="btn-retry">Retry</button>
+    </div>
+
+  </main>
+
+  <script>
+    // ─── GLOBAL STATE ─────────────────────────────────────────────────────────
+    const STATES = { IDLE: 'idle', RECORDING: 'recording', ANALYZING: 'analyzing', RESULTS: 'results' };
+    let currentAnalysisData = {};
+    let lastAnalysisTranscript = '';
+
+    // ─── STATE MACHINE ────────────────────────────────────────────────────────
+    function setState(newState) {
+      document.body.dataset.state = newState;
+      const statusEl = document.getElementById('header-status');
+      if (newState === STATES.ANALYZING) {
+        statusEl.textContent = '✦ Analyzing...';
+        statusEl.className = 'status-analyzing';
+      } else if (newState === STATES.RESULTS) {
+        const date = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        statusEl.textContent = `— ${date}`;
+        statusEl.className = '';
+      } else {
+        statusEl.textContent = '';
+        statusEl.className = '';
+      }
+    }
+
+    // ─── SETTINGS ─────────────────────────────────────────────────────────────
+    function openSettings() { document.body.classList.add('settings-open'); }
+    function closeSettings() { document.body.classList.remove('settings-open'); }
+
+    document.getElementById('btn-settings').addEventListener('click', openSettings);
+    document.getElementById('settings-close').addEventListener('click', closeSettings);
+    document.getElementById('settings-save').addEventListener('click', () => {
+      localStorage.setItem('sp_apiKey', document.getElementById('setting-apikey').value.trim());
+      localStorage.setItem('sp_teamName', document.getElementById('setting-teamname').value.trim() || 'Support Team');
+      localStorage.setItem('sp_buzzwords', document.getElementById('setting-buzzwords').value.trim() || 'Lego,synergy,circle back,bandwidth,unblock');
+      localStorage.setItem('sp_showFun', document.getElementById('setting-showfun').checked ? 'true' : 'false');
+      document.getElementById('setting-apikey').style.outline = '';
+      applySettings();
+      closeSettings();
+    });
+
+    function loadSettings() {
+      document.getElementById('setting-apikey').value = localStorage.getItem('sp_apiKey') || '';
+      document.getElementById('setting-teamname').value = localStorage.getItem('sp_teamName') || 'Support Team';
+      document.getElementById('setting-buzzwords').value = localStorage.getItem('sp_buzzwords') || 'Lego,synergy,circle back,bandwidth,unblock';
+      document.getElementById('setting-showfun').checked = localStorage.getItem('sp_showFun') !== 'false';
+    }
+
+    function applySettings() {
+      document.getElementById('header-team-name').textContent = localStorage.getItem('sp_teamName') || 'Support Team';
+      const showFun = localStorage.getItem('sp_showFun') !== 'false';
+      document.querySelectorAll('.fun-chip').forEach(chip => {
+        chip.style.display = showFun ? '' : 'none';
+      });
+    }
+
+    // ─── TABS ─────────────────────────────────────────────────────────────────
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    // ─── RESET ────────────────────────────────────────────────────────────────
+    document.getElementById('btn-new-recording').addEventListener('click', resetToIdle);
+
+    function resetToIdle() {
+      document.getElementById('transcript-final').textContent = '';
+      document.getElementById('transcript-interim').textContent = '';
+      document.getElementById('transcript-frozen').textContent = '';
+      document.querySelectorAll('.chip').forEach(chip => {
+        chip.dataset.chipState = 'pending';
+        chip.querySelector('.chip-preview')?.remove();
+      });
+      document.getElementById('tab-summary').innerHTML = '';
+      document.getElementById('tab-actions').innerHTML = '';
+      document.getElementById('tab-fun').innerHTML = '';
+      // Reset tabs to Summary
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelector('[data-tab="summary"]').classList.add('active');
+      document.getElementById('tab-summary').classList.add('active');
+      hideError();
+      setState(STATES.IDLE);
+    }
+
+    // ─── ERROR ────────────────────────────────────────────────────────────────
+    function showError(message, showRetry = false) {
+      const el = document.getElementById('error-message');
+      document.getElementById('error-text').textContent = message;
+      el.classList.add('visible');
+      document.getElementById('btn-retry').style.display = showRetry ? '' : 'none';
+    }
+    function hideError() {
+      document.getElementById('error-message').classList.remove('visible');
+    }
+
+    // ─── INIT ─────────────────────────────────────────────────────────────────
+    loadSettings();
+    applySettings();
+  </script>
+</body>
+</html>
