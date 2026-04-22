@@ -586,10 +586,201 @@
     document.getElementById('btn-record').addEventListener('click', startRecording);
     document.getElementById('btn-stop').addEventListener('click', stopRecording);
 
-    // Stub — replaced in Task 4
+    // ─── SYSTEM PROMPT ────────────────────────────────────────────────────────
+    function buildSystemPrompt() {
+      const buzzwordList = localStorage.getItem('sp_buzzwords') || 'Lego,synergy,circle back,bandwidth,unblock';
+      return `You are analyzing a support team standup meeting transcript.
+
+Output EXACTLY 12 JSON objects, one per line, with NO other text before or after. Use this exact format and order:
+
+{"category":"issues","data":[{"description":"...","severity":"low|medium|high|critical"}]}
+{"category":"blockers","data":["..."]}
+{"category":"action_items","data":[{"owner":"person name or null","task":"..."}]}
+{"category":"tickets","data":["ticket IDs or references mentioned"]}
+{"category":"follow_ups","data":["..."]}
+{"category":"mood","data":"single string describing team energy or mood"}
+{"category":"joke","data":{"told":true,"quote":"exact quote from transcript"}}
+{"category":"buzzwords","data":["matched words from watch list"]}
+{"category":"tool_complaints","data":["specific tool or product complaints"]}
+{"category":"boss_complaints","data":{"detected":true,"quote":"exact quote"}}
+{"category":"dramatic_line","data":"the single most dramatic or urgent-sounding sentence"}
+{"category":"confidence_score","data":42}
+
+Rules:
+- Buzzword watch list: ${buzzwordList}. ONLY include words from this exact list that appear verbatim (case-insensitive) in the transcript.
+- confidence_score is an integer 0-100: tongue-in-cheek prediction of whether action items will actually get done. 0 = "absolutely not", 100 = "miraculous commitment".
+- If nothing found for an array field, use [].
+- joke with no joke: {"told":false,"quote":null}
+- boss_complaints with nothing: {"detected":false,"quote":null}
+- tool_complaints with nothing: []
+- All text values under 100 characters.
+- Output ONLY the 12 JSON lines. No preamble. No explanation. Nothing else.`;
+    }
+
+    // ─── CHIP UTILITIES ────────────────────────────────────────────────────────
+    function updateChip(category, chipState, previewText = '') {
+      const chip = document.querySelector(`[data-category="${category}"]`);
+      if (!chip) return;
+      chip.dataset.chipState = chipState;
+      chip.querySelector('.chip-preview')?.remove();
+      if (previewText) {
+        const preview = document.createElement('span');
+        preview.className = 'chip-preview';
+        preview.textContent = previewText;
+        chip.appendChild(preview);
+      }
+    }
+
+    function getChipPreview(category, data) {
+      if (data === null || data === undefined) return 'none';
+      switch (category) {
+        case 'issues':          return data.length ? `${data.length} issue${data.length > 1 ? 's' : ''}` : 'none';
+        case 'blockers':        return data.length ? data[0].slice(0, 28) : 'none';
+        case 'action_items':    return data.length ? `${data.length} item${data.length > 1 ? 's' : ''}` : 'none';
+        case 'tickets':         return data.length ? data.join(', ').slice(0, 24) : 'none';
+        case 'follow_ups':      return data.length ? `${data.length} item${data.length > 1 ? 's' : ''}` : 'none';
+        case 'mood':            return typeof data === 'string' ? data.slice(0, 28) : '';
+        case 'joke':            return data.told ? '😂 detected' : 'none';
+        case 'buzzwords':       return data.length ? data.join(', ').slice(0, 24) : 'clean!';
+        case 'tool_complaints': return Array.isArray(data) && data.length ? `${data.length} complaint${data.length > 1 ? 's' : ''}` : 'none';
+        case 'boss_complaints': return data.detected ? '😬 detected' : 'all good';
+        case 'dramatic_line':   return typeof data === 'string' ? data.slice(0, 26) + '…' : '';
+        case 'confidence_score':return `${data}%`;
+        default:                return '';
+      }
+    }
+
+    // ─── CLAUDE STREAMING ─────────────────────────────────────────────────────
     async function analyzeTranscript(transcript) {
+      hideError();
       setState(STATES.ANALYZING);
-      console.log('analyzeTranscript called with:', transcript.slice(0, 80) + '...');
+
+      // Reset chips
+      document.querySelectorAll('.chip').forEach(chip => {
+        chip.dataset.chipState = 'pending';
+        chip.querySelector('.chip-preview')?.remove();
+      });
+
+      const apiKey = localStorage.getItem('sp_apiKey');
+      if (!apiKey) {
+        openSettings();
+        document.getElementById('setting-apikey').style.outline = '2px solid #ef4444';
+        setState(STATES.IDLE);
+        return;
+      }
+
+      let response;
+      try {
+        response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 2048,
+            stream: true,
+            system: buildSystemPrompt(),
+            messages: [{ role: 'user', content: `Analyze this standup transcript:\n\n${transcript}` }]
+          })
+        });
+      } catch (err) {
+        showError(`Network error: ${err.message}`, true);
+        setState(STATES.IDLE);
+        return;
+      }
+
+      if (!response.ok) {
+        let errMsg = `API error ${response.status}`;
+        try { const j = await response.json(); errMsg = j.error?.message || errMsg; } catch {}
+        showError(errMsg, true);
+        setState(STATES.IDLE);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = '';
+      let lineBuffer = '';
+      const analysisData = {};
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          sseBuffer += decoder.decode(value, { stream: true });
+          const sseLines = sseBuffer.split('\n');
+          sseBuffer = sseLines.pop(); // Keep the incomplete last SSE line
+
+          for (const sseLine of sseLines) {
+            if (!sseLine.startsWith('data: ')) continue;
+            const raw = sseLine.slice(6).trim();
+            if (raw === '[DONE]') continue;
+
+            let event;
+            try { event = JSON.parse(raw); } catch { continue; }
+
+            if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+              lineBuffer += event.delta.text;
+
+              // Detect which category chip should show as streaming
+              const catMatch = lineBuffer.match(/"category"\s*:\s*"([^"]+)"/);
+              if (catMatch && !analysisData[catMatch[1]]) {
+                updateChip(catMatch[1], 'streaming');
+              }
+
+              // Extract complete NDJSON lines from lineBuffer
+              let nl;
+              while ((nl = lineBuffer.indexOf('\n')) !== -1) {
+                const completeLine = lineBuffer.slice(0, nl).trim();
+                lineBuffer = lineBuffer.slice(nl + 1);
+                if (!completeLine) continue;
+                try {
+                  const parsed = JSON.parse(completeLine);
+                  if (parsed.category) {
+                    analysisData[parsed.category] = parsed.data;
+                    updateChip(parsed.category, 'done', getChipPreview(parsed.category, parsed.data));
+                  }
+                } catch (e) {
+                  console.warn('Skipping malformed NDJSON line:', completeLine);
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        showError(`Streaming error: ${err.message}`, true);
+        setState(STATES.IDLE);
+        return;
+      }
+
+      // Parse any remaining content in lineBuffer (last line may lack trailing \n)
+      if (lineBuffer.trim()) {
+        try {
+          const parsed = JSON.parse(lineBuffer.trim());
+          if (parsed.category) {
+            analysisData[parsed.category] = parsed.data;
+            updateChip(parsed.category, 'done', getChipPreview(parsed.category, parsed.data));
+          }
+        } catch {}
+      }
+
+      renderResults(analysisData);
+      setState(STATES.RESULTS);
+    }
+
+    document.getElementById('btn-retry').addEventListener('click', () => {
+      if (lastAnalysisTranscript) analyzeTranscript(lastAnalysisTranscript);
+    });
+
+    // Stub — replaced in Task 5
+    function renderResults(data) {
+      currentAnalysisData = data;
+      console.log('renderResults called:', data);
     }
   </script>
 </body>
