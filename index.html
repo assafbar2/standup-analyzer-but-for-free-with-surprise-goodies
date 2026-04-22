@@ -514,6 +514,82 @@
     // ─── INIT ─────────────────────────────────────────────────────────────────
     loadSettings();
     applySettings();
+
+    // ─── SPEECH RECOGNITION ───────────────────────────────────────────────────
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let finalTranscript = '';
+
+    if (!SpeechRecognition) {
+      document.getElementById('unsupported-banner').style.display = 'block';
+      document.getElementById('btn-record').style.display = 'none';
+      document.getElementById('click-to-record').style.display = 'none';
+      document.getElementById('transcript-placeholder').style.display = 'none';
+    } else {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript + ' ';
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+        document.getElementById('transcript-final').textContent = finalTranscript;
+        document.getElementById('transcript-interim').textContent = interim;
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'no-speech') return;
+        showError(`Speech recognition error: ${event.error}`);
+        setState(STATES.IDLE);
+      };
+
+      recognition.onend = () => {
+        // Recognition can auto-stop on silence; restart if still in recording state
+        if (document.body.dataset.state === STATES.RECORDING) {
+          recognition.start();
+        }
+      };
+    }
+
+    function startRecording() {
+      if (!recognition) return;
+      finalTranscript = '';
+      document.getElementById('transcript-final').textContent = '';
+      document.getElementById('transcript-interim').textContent = '';
+      hideError();
+      setState(STATES.RECORDING);
+      recognition.start();
+    }
+
+    function stopRecording() {
+      if (!recognition) return;
+      recognition.stop();
+      const transcript = finalTranscript.trim();
+      if (!transcript) {
+        alert('Nothing was recorded. Try again.');
+        setState(STATES.IDLE);
+        return;
+      }
+      lastAnalysisTranscript = transcript;
+      document.getElementById('transcript-frozen').textContent = transcript;
+      analyzeTranscript(transcript);
+    }
+
+    document.getElementById('btn-record').addEventListener('click', startRecording);
+    document.getElementById('btn-stop').addEventListener('click', stopRecording);
+
+    // Stub — replaced in Task 4
+    async function analyzeTranscript(transcript) {
+      setState(STATES.ANALYZING);
+      console.log('analyzeTranscript called with:', transcript.slice(0, 80) + '...');
+    }
   </script>
 </body>
 </html>
