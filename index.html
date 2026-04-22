@@ -777,10 +777,133 @@ Rules:
       if (lastAnalysisTranscript) analyzeTranscript(lastAnalysisTranscript);
     });
 
-    // Stub — replaced in Task 5
     function renderResults(data) {
       currentAnalysisData = data;
-      console.log('renderResults called:', data);
+      renderSummaryTab(data);
+      renderActionsTab(data);
+      renderFunTab(data);
+    }
+
+    function renderSummaryTab(data) {
+      const cards = [
+        { category: 'issues', label: '🔴 Issues', css: 'issues', render: (d) => {
+          if (!d || !d.length) return '<p>None detected</p>';
+          return '<ul>' + d.map(i =>
+            `<li>${i.description}${i.severity ? ` <span style="opacity:0.55;font-size:11px">(${i.severity})</span>` : ''}</li>`
+          ).join('') + '</ul>';
+        }},
+        { category: 'blockers', label: '🚧 Blockers', css: 'blockers', render: (d) => {
+          if (!d || !d.length) return '<p>No blockers 🎉</p>';
+          return '<ul>' + d.map(b => `<li>${b}</li>`).join('') + '</ul>';
+        }},
+        { category: 'tickets', label: '🎫 Tickets Referenced', css: 'tickets', render: (d) => {
+          if (!d || !d.length) return '<p>None mentioned</p>';
+          return '<ul>' + d.map(t => `<li>${t}</li>`).join('') + '</ul>';
+        }},
+        { category: 'follow_ups', label: '🔍 Follow-ups', css: 'follow_ups', render: (d) => {
+          if (!d || !d.length) return '<p>None</p>';
+          return '<ul>' + d.map(f => `<li>${f}</li>`).join('') + '</ul>';
+        }},
+        { category: 'mood', label: '😄 Team Mood', css: 'mood', render: (d) => {
+          return `<p>${d || 'Not determined'}</p>`;
+        }},
+      ];
+
+      document.getElementById('tab-summary').innerHTML =
+        '<div class="result-grid">' +
+        cards.map(card =>
+          `<div class="result-card card-${card.css}">
+            <div class="result-card-label">${card.label}</div>
+            ${card.render(data[card.category])}
+          </div>`
+        ).join('') +
+        '</div>';
+    }
+
+    function renderActionsTab(data) {
+      const items = data['action_items'] || [];
+      const container = document.getElementById('tab-actions');
+
+      if (!items.length) {
+        container.innerHTML = '<div class="result-card card-action_items"><p>No action items recorded.</p></div>';
+        return;
+      }
+
+      container.innerHTML =
+        '<div style="display:flex;flex-direction:column;gap:10px;">' +
+        items.map(item =>
+          `<div class="result-card card-action_items" style="display:flex;align-items:flex-start;gap:12px;">
+            <span style="font-size:18px;margin-top:1px;">☐</span>
+            <div>
+              ${item.owner ? `<div class="action-owner">${item.owner}</div>` : ''}
+              <div style="font-size:14px;color:#ede9fe;">${item.task}</div>
+            </div>
+          </div>`
+        ).join('') +
+        '</div>';
+    }
+
+    function renderFunTab(data) {
+      const showFun = localStorage.getItem('sp_showFun') !== 'false';
+      const container = document.getElementById('tab-fun');
+
+      if (!showFun) {
+        container.innerHTML = '<p style="color:rgba(109,40,217,0.7);padding:16px;">Fun categories are disabled. Enable them in ⚙ Settings.</p>';
+        return;
+      }
+
+      const joke            = data['joke']             || { told: false, quote: null };
+      const buzzwords       = data['buzzwords']        || [];
+      const toolComplaints  = data['tool_complaints']  || [];
+      const bossComplaints  = data['boss_complaints']  || { detected: false, quote: null };
+      const dramaticLine    = data['dramatic_line']    || '';
+      const confidence      = data['confidence_score'];
+
+      const confidenceLabel =
+        confidence === null || confidence === undefined ? 'N/A' :
+        confidence < 20 ? `${confidence}% — "absolutely not"` :
+        confidence < 40 ? `${confidence}% — "maybe if the stars align"` :
+        confidence < 60 ? `${confidence}% — "we'll see"` :
+        confidence < 80 ? `${confidence}% — "surprisingly likely"` :
+        `${confidence}% — "miraculous commitment"`;
+
+      container.innerHTML = `
+        <div class="result-grid">
+          <div class="result-card card-fun">
+            <div class="result-card-label">😂 Joke Detector</div>
+            ${joke.told ? `<p>"${joke.quote}"</p>` : '<p>No jokes detected. Sad standup.</p>'}
+          </div>
+          <div class="result-card card-fun">
+            <div class="result-card-label">🎲 Buzzword Bingo</div>
+            ${buzzwords.length
+              ? '<ul>' + buzzwords.map(w => `<li>${w}</li>`).join('') + '</ul>'
+              : '<p>Clean standup — no buzzwords hit!</p>'}
+          </div>
+          <div class="result-card card-fun">
+            <div class="result-card-label">🔧 Tool Complaints</div>
+            ${toolComplaints.length
+              ? '<ul>' + toolComplaints.map(c => `<li>${c}</li>`).join('') + '</ul>'
+              : '<p>No tool complaints (impressive)</p>'}
+          </div>
+          <div class="result-card card-fun">
+            <div class="result-card-label">😤 Boss Complaints</div>
+            ${bossComplaints.detected
+              ? `<p>"${bossComplaints.quote}"</p>`
+              : '<p>Boss reputation intact</p>'}
+          </div>
+          <div class="result-card card-fun" style="grid-column: 1 / -1;">
+            <div class="result-card-label">🎭 Most Dramatic Sentence</div>
+            <p style="font-style:italic;">"${dramaticLine || 'Nothing dramatic happened today'}"</p>
+          </div>
+          <div class="result-card card-fun" style="grid-column: 1 / -1;">
+            <div class="result-card-label">📊 Will Action Items Actually Get Done?</div>
+            <p>${confidenceLabel}</p>
+            ${confidence !== null && confidence !== undefined ? `
+              <div class="confidence-bar">
+                <div class="confidence-fill" style="width:${confidence}%"></div>
+              </div>` : ''}
+          </div>
+        </div>`;
     }
   </script>
 </body>
