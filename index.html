@@ -777,6 +777,15 @@ Rules:
       if (lastAnalysisTranscript) analyzeTranscript(lastAnalysisTranscript);
     });
 
+    function getConfidenceLabel(score) {
+      if (score === null || score === undefined) return 'N/A';
+      if (score < 20) return `${score}% — "absolutely not"`;
+      if (score < 40) return `${score}% — "maybe if the stars align"`;
+      if (score < 60) return `${score}% — "we'll see"`;
+      if (score < 80) return `${score}% — "surprisingly likely"`;
+      return `${score}% — "miraculous commitment"`;
+    }
+
     function renderResults(data) {
       currentAnalysisData = data;
       renderSummaryTab(data);
@@ -859,13 +868,7 @@ Rules:
       const dramaticLine    = data['dramatic_line']    || '';
       const confidence      = data['confidence_score'];
 
-      const confidenceLabel =
-        confidence === null || confidence === undefined ? 'N/A' :
-        confidence < 20 ? `${confidence}% — "absolutely not"` :
-        confidence < 40 ? `${confidence}% — "maybe if the stars align"` :
-        confidence < 60 ? `${confidence}% — "we'll see"` :
-        confidence < 80 ? `${confidence}% — "surprisingly likely"` :
-        `${confidence}% — "miraculous commitment"`;
+      const confidenceLabel = getConfidenceLabel(confidence);
 
       container.innerHTML = `
         <div class="result-grid">
@@ -906,7 +909,7 @@ Rules:
         </div>`;
     }
 
-    function formatMarkdown(transcript, data) {
+    function formatMarkdown(data) {
       const teamName   = localStorage.getItem('sp_teamName') || 'Support Team';
       const showFun    = localStorage.getItem('sp_showFun') !== 'false';
       const date       = new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
@@ -951,9 +954,7 @@ Rules:
       md += `## Team Mood\n${mood}\n`;
 
       if (showFun) {
-        const confLabel = confidence !== null && confidence !== undefined
-          ? `${confidence}% — ${confidence < 40 ? '"we\'ll see"' : confidence < 70 ? '"surprisingly likely"' : '"miraculous"'}`
-          : 'N/A';
+        const confLabel = getConfidenceLabel(confidence);
         md += `\n---\n## Fun Stats\n`;
         if (buzzwords.length)         md += `🎲 Buzzwords: ${buzzwords.map(w => `"${w}"`).join(', ')}\n`;
         if (joke.told)                md += `😂 Joke: "${joke.quote}"\n`;
@@ -973,7 +974,8 @@ Rules:
         const orig = btn.textContent;
         btn.textContent = '✓ Copied!';
         setTimeout(() => { btn.textContent = orig; }, 1500);
-      } catch {
+      } catch (err) {
+        console.error('Clipboard write failed:', err);
         alert('Clipboard blocked. Check the console for the content.');
         console.log(text);
       }
@@ -984,7 +986,7 @@ Rules:
     });
 
     document.getElementById('btn-copy-md').addEventListener('click', () => {
-      copyToClipboard(formatMarkdown(lastAnalysisTranscript, currentAnalysisData), document.getElementById('btn-copy-md'));
+      copyToClipboard(formatMarkdown(currentAnalysisData), document.getElementById('btn-copy-md'));
     });
   </script>
 </body>
