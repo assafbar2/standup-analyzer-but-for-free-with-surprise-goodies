@@ -836,7 +836,7 @@ Rules:
             <span style="font-size:18px;margin-top:1px;">☐</span>
             <div>
               ${item.owner ? `<div class="action-owner">${item.owner}</div>` : ''}
-              <div style="font-size:14px;color:#ede9fe;">${item.task}</div>
+              <div style="font-size:14px;color:#ede9fe;">${item.task || ''}</div>
             </div>
           </div>`
         ).join('') +
@@ -893,7 +893,7 @@ Rules:
           </div>
           <div class="result-card card-fun" style="grid-column: 1 / -1;">
             <div class="result-card-label">🎭 Most Dramatic Sentence</div>
-            <p style="font-style:italic;">"${dramaticLine || 'Nothing dramatic happened today'}"</p>
+            <p style="font-style:italic;">${dramaticLine ? `"${dramaticLine}"` : 'Nothing dramatic happened today'}</p>
           </div>
           <div class="result-card card-fun" style="grid-column: 1 / -1;">
             <div class="result-card-label">📊 Will Action Items Actually Get Done?</div>
