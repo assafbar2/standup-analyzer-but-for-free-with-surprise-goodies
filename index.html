@@ -552,8 +552,9 @@
 
       recognition.onend = () => {
         // Recognition can auto-stop on silence; restart if still in recording state
+        // setTimeout defers start() to let the browser fully tear down the previous session
         if (document.body.dataset.state === STATES.RECORDING) {
-          recognition.start();
+          setTimeout(() => recognition.start(), 0);
         }
       };
     }
