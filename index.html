@@ -109,7 +109,7 @@
     <!-- ERROR MESSAGE (visible across all states when shown) -->
     <div id="error-message">
       <span id="error-text"></span>
-      <button id="btn-retry">Retry</button>
+      <button id="btn-retry" style="display:none">Retry</button>
     </div>
 
   </main>
@@ -182,6 +182,8 @@
     document.getElementById('btn-new-recording').addEventListener('click', resetToIdle);
 
     function resetToIdle() {
+      currentAnalysisData = {};
+      lastAnalysisTranscript = '';
       document.getElementById('transcript-final').textContent = '';
       document.getElementById('transcript-interim').textContent = '';
       document.getElementById('transcript-frozen').textContent = '';
