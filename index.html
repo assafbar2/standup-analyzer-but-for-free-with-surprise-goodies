@@ -905,6 +905,87 @@ Rules:
           </div>
         </div>`;
     }
+
+    function formatMarkdown(transcript, data) {
+      const teamName   = localStorage.getItem('sp_teamName') || 'Support Team';
+      const showFun    = localStorage.getItem('sp_showFun') !== 'false';
+      const date       = new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+
+      const issues        = data['issues']          || [];
+      const blockers      = data['blockers']        || [];
+      const actionItems   = data['action_items']    || [];
+      const tickets       = data['tickets']         || [];
+      const followUps     = data['follow_ups']      || [];
+      const mood          = data['mood']            || 'Not determined';
+      const buzzwords     = data['buzzwords']       || [];
+      const dramaticLine  = data['dramatic_line']   || '';
+      const confidence    = data['confidence_score'];
+      const joke          = data['joke']            || { told: false, quote: null };
+      const toolCmps      = data['tool_complaints'] || [];
+      const bossCmps      = data['boss_complaints'] || { detected: false, quote: null };
+
+      let md = `# ${teamName} Standup — ${date}\n\n`;
+
+      md += `## Issues\n`;
+      md += issues.length ? issues.map(i => `- ${i.description}${i.severity ? ` (${i.severity})` : ''}`).join('\n') : '- None';
+      md += '\n\n';
+
+      md += `## Blockers\n`;
+      md += blockers.length ? blockers.map(b => `- ${b}`).join('\n') : '- None';
+      md += '\n\n';
+
+      md += `## Action Items\n`;
+      md += actionItems.length
+        ? actionItems.map(a => `- [ ] ${a.owner ? `**${a.owner}** → ` : ''}${a.task}`).join('\n')
+        : '- None';
+      md += '\n\n';
+
+      md += `## Tickets\n`;
+      md += tickets.length ? tickets.map(t => `- ${t}`).join('\n') : '- None';
+      md += '\n\n';
+
+      md += `## Follow-ups\n`;
+      md += followUps.length ? followUps.map(f => `- ${f}`).join('\n') : '- None';
+      md += '\n\n';
+
+      md += `## Team Mood\n${mood}\n`;
+
+      if (showFun) {
+        const confLabel = confidence !== null && confidence !== undefined
+          ? `${confidence}% — ${confidence < 40 ? '"we\'ll see"' : confidence < 70 ? '"surprisingly likely"' : '"miraculous"'}`
+          : 'N/A';
+        md += `\n---\n## Fun Stats\n`;
+        if (buzzwords.length)         md += `🎲 Buzzwords: ${buzzwords.map(w => `"${w}"`).join(', ')}\n`;
+        if (joke.told)                md += `😂 Joke: "${joke.quote}"\n`;
+        if (toolCmps.length)          md += `🔧 Tool complaints: ${toolCmps.join('; ')}\n`;
+        if (bossCmps.detected)        md += `😤 Boss complaint: "${bossCmps.quote}"\n`;
+        if (dramaticLine)             md += `🎭 Most dramatic: "${dramaticLine}"\n`;
+        if (confidence !== null && confidence !== undefined)
+                                      md += `📊 Confidence score: ${confLabel}\n`;
+      }
+
+      return md;
+    }
+
+    async function copyToClipboard(text, btn) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      } catch {
+        alert('Clipboard blocked. Check the console for the content.');
+        console.log(text);
+      }
+    }
+
+    document.getElementById('btn-copy-transcript').addEventListener('click', () => {
+      copyToClipboard(lastAnalysisTranscript, document.getElementById('btn-copy-transcript'));
+    });
+
+    document.getElementById('btn-copy-md').addEventListener('click', () => {
+      copyToClipboard(formatMarkdown(lastAnalysisTranscript, currentAnalysisData), document.getElementById('btn-copy-md'));
+    });
   </script>
 </body>
 </html>
