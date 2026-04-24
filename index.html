@@ -674,6 +674,12 @@
 
     function startRecording() {
       if (!recognition) return;
+      const apiKey = localStorage.getItem('sp_apiKey');
+      if (!apiKey) {
+        openSettings();
+        document.getElementById('setting-apikey').style.outline = '2px solid #ef4444';
+        return;
+      }
       finalTranscript = '';
       document.getElementById('transcript-final').textContent = '';
       document.getElementById('transcript-interim').textContent = '';
