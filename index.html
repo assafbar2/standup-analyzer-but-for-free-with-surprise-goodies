@@ -724,14 +724,14 @@ Output EXACTLY 12 JSON objects, one per line, with NO other text before or after
 {"category":"follow_ups","data":["..."]}
 {"category":"mood","data":"single string describing team energy or mood"}
 {"category":"joke","data":{"told":true,"quote":"exact quote from transcript"}}
-{"category":"buzzwords","data":[{"word":"synergy","count":3}]}
+{"category":"buzzwords","data":["matched words from watch list"]}
 {"category":"tool_complaints","data":["specific tool or product complaints"]}
 {"category":"boss_complaints","data":{"detected":true,"quote":"exact quote"}}
 {"category":"dramatic_line","data":"the single most dramatic or urgent-sounding sentence"}
 {"category":"confidence_score","data":42}
 
 Rules:
-- Buzzword watch list: ${buzzwordList}. ONLY include words from this exact list that appear verbatim (case-insensitive) in the transcript. For each matched word, count how many times it appears and return {"word":"...","count":N}.
+- Buzzword watch list: ${buzzwordList}. ONLY include words from this exact list that appear verbatim (case-insensitive) in the transcript.
 - confidence_score is an integer 0-100: tongue-in-cheek prediction of whether action items will actually get done. 0 = "absolutely not", 100 = "miraculous commitment".
 - If nothing found for an array field, use [].
 - joke with no joke: {"told":false,"quote":null}
@@ -739,6 +739,12 @@ Rules:
 - tool_complaints with nothing: []
 - All text values under 100 characters.
 - Output ONLY the 12 JSON lines. No preamble. No explanation. Nothing else.`;
+    }
+
+    function countInTranscript(word) {
+      if (!lastAnalysisTranscript) return 0;
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return (lastAnalysisTranscript.match(new RegExp(escaped, 'gi')) || []).length;
     }
 
     // ─── CHIP UTILITIES ────────────────────────────────────────────────────────
@@ -765,7 +771,7 @@ Rules:
         case 'follow_ups':      return data.length ? `${data.length} item${data.length > 1 ? 's' : ''}` : 'none';
         case 'mood':            return typeof data === 'string' ? data.slice(0, 28) : '';
         case 'joke':            return data.told ? '😂 detected' : 'none';
-        case 'buzzwords':       return data.length ? data.map(b => `${b.word} ×${b.count}`).join(', ').slice(0, 28) : 'clean!';
+        case 'buzzwords':       return data.length ? data.map(w => `${w} ×${countInTranscript(w)}`).join(', ').slice(0, 28) : 'clean!';
         case 'tool_complaints': return Array.isArray(data) && data.length ? `${data.length} complaint${data.length > 1 ? 's' : ''}` : 'none';
         case 'boss_complaints': return data.detected ? '😬 detected' : 'all good';
         case 'dramatic_line':   return typeof data === 'string' ? data.slice(0, 26) + '…' : '';
@@ -1003,7 +1009,7 @@ Rules:
           <div class="result-card card-fun">
             <div class="result-card-label">🎲 Buzzword Bingo</div>
             ${buzzwords.length
-              ? '<ul>' + buzzwords.map(b => `<li>${b.word} <span style="opacity:0.55;font-size:11px">×${b.count}</span></li>`).join('') + '</ul>'
+              ? '<ul>' + buzzwords.map(w => `<li>${w} <span style="opacity:0.55;font-size:11px">×${countInTranscript(w)}</span></li>`).join('') + '</ul>'
               : '<p>Clean standup — no buzzwords hit!</p>'}
           </div>
           <div class="result-card card-fun">
@@ -1080,7 +1086,7 @@ Rules:
       if (showFun) {
         const confLabel = getConfidenceLabel(confidence);
         md += `\n---\n## Fun Stats\n`;
-        if (buzzwords.length)         md += `🎲 Buzzwords: ${buzzwords.map(b => `"${b.word}" ×${b.count}`).join(', ')}\n`;
+        if (buzzwords.length)         md += `🎲 Buzzwords: ${buzzwords.map(w => `"${w}" ×${countInTranscript(w)}`).join(', ')}\n`;
         if (joke.told)                md += `😂 Joke: "${joke.quote}"\n`;
         if (toolCmps.length)          md += `🔧 Tool complaints: ${toolCmps.join('; ')}\n`;
         if (bossCmps.detected)        md += `😤 Boss complaint: "${bossCmps.quote}"\n`;
